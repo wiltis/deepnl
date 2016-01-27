@@ -20,6 +20,7 @@ import cPickle as pickle
 from itertools import izip
 from numpy import int32 as INT
 import sys                      # modules
+import itertools
 
 # local
 from word_dictionary import WordDictionary as WD
@@ -122,13 +123,14 @@ cdef class Converter(object):
         """
         return INT([e.get_padding_right() for e in self.extractors])
     
-    cpdef np.ndarray[int_t,ndim=2] convert(self, list sent):
+    cpdef np.ndarray[int_t,ndim=2] convert(self, list sent, dict other=None):
         """
         Converts a sentence into an array of feature indices.
         :param sent: a list of tokens.
+	:param other: a dictionary with other params.
         :return: an array of all extractors' results.
         """
-        return INT(zip(*[(<Extractor>e).extract(sent, field) for e, field in zip(self.extractors, self.fields)]))
+        return INT(zip(*[(<Extractor>e).extract(sent, field, other) for e, field in zip(self.extractors, self.fields)]))
         # CHECKME: is this faster?
         # return np.array([extractor.extract(sent) for extractor in self.extractors]).T
 
@@ -248,7 +250,7 @@ cdef class Extractor(object):
         ":return: the feature representing the token used as right padding"
         return <int_t>self.dict.padding_right
 
-    cpdef extract(self, list tokens, int_t field):
+    cpdef extract(self, list tokens, int_t field, dict other):
         """
         Extract the features representing each token.
         :param tokens: list of tokens.
@@ -445,7 +447,7 @@ cdef class CapsExtractor(Extractor):
         ":return: the feature representing the token used as right padding"
         return Caps.padding
 
-    cpdef extract(self, list tokens, int_t field):
+    cpdef extract(self, list tokens, int_t field, dict other):
         """
         :param tokens: list of tokens.
         :param field: which token field to use, the whole token if -1.
@@ -515,7 +517,7 @@ cdef class AffixExtractor(Extractor):
         ":return: the feature representing the token used as right padding"
         return AffixExtractor.padding
 
-    cpdef extract(self, list tokens, int_t field):
+    cpdef extract(self, list tokens, int_t field, dict other):
         """
         :param tokens: list of tokens.
         :param field: which token field to use, the whole token if None.
@@ -680,7 +682,7 @@ cdef class GazetteerExtractor(Extractor):
         if noaccents: w = strip_accents(w)
         return w 
 
-    cpdef extract(self, list tokens, int_t field):
+    cpdef extract(self, list tokens, int_t field, dict other):
         """
         Check presence in dictionary possibly as multiword.
         Set to 'present' items corresponding to tokens present in dictionary
@@ -802,3 +804,591 @@ cdef class AttributeExtractor(Extractor):
     cpdef int_t get_padding_right(self):
         ":return: the feature representing the token used as right padding"
         return AttributeExtractor.padding
+
+
+# ----------------------------------------------------------------------
+
+cdef class ScopeExtractor(Extractor):
+    """Abstract class for scope extractors."""
+
+    padding = 0
+ 
+    COLUMNS = {
+        'ID': 0,
+        'FORM': 1,
+        'LEMMA': 2,
+        'CPOSTAG': 3,
+        'POSTAG': 4,
+        'FEATS': 5,
+        'HEAD': 6,
+        'DEPREL': 7,
+        'PHEAD': 8,
+        'PDEPREL': 9,
+        'CUE': 10,
+        'SCOPE': 11
+    }
+
+    UNKNOWN=-1
+    NONE = -2
+
+    def __init__(self, sentences, size=5):
+        """
+        :param values: set of attribute values.
+        :param size: vector dimension.
+        """
+        super(ScopeExtractor, self).__init__()
+    
+        self.extract_dict(sentences) #assign self.dict
+        self.dict[self.UNKNOWN] = len(self.dict)
+        self.dict[self.NONE] = len(self.dict)
+        self.table = embeddings.generate_vectors(len(self.dict)+1, size)
+
+    
+    cdef set _get_tokens_value(self, sentences, position):
+        return set([tok[position] for (sent, tree) in sentences for tok in sent])
+
+    # to override this method
+    cdef dict extract_dict(self, sentences):
+        self.dict = {}
+
+    cpdef int_t get_padding_left(self):
+        ":return: the feature representing the token used as left padding"
+        return AttributeExtractor.padding
+
+    cpdef int_t get_padding_right(self):
+        ":return: the feature representing the token used as right padding"
+        return AttributeExtractor.padding
+
+# ----------------------------------------------------------------------
+
+cdef class ScopeExtractorCandidateCueDepRel(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #deprel_set = set([tok[ScopeExtractor.COLUMNS['DEPREL']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['DEPREL'])
+        values = [p for p in itertools.product(s, repeat=2)]
+        self.dict = {'-'.join(v):i for i,v in enumerate(values)}
+
+    
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope).
+
+        """        
+        return [self.dict.get('%s-%s' % (other['node'].value[self.COLUMNS['DEPREL']], other['cue'].value[self.COLUMNS['DEPREL']]), self.dict[self.UNKNOWN])]
+
+# ----------------------------------------------------------------------
+
+cdef class ScopeExtractorCandidatePos(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #pos_set = set([tok[ScopeExtractor.COLUMNS['POSTAG']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['POSTAG'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope).
+
+        """        
+        return [self.dict.get(other['node'].value[ScopeExtractor.COLUMNS['POSTAG']], self.dict[self.UNKNOWN])]
+
+
+cdef class ScopeExtractorCandidateLemma(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #lemma_set = set([tok[ScopeExtractor.COLUMNS['LEMMA']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['LEMMA'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope).
+
+        """        
+        return [self.dict.get(other['node'].value[ScopeExtractor.COLUMNS['LEMMA']], self.dict[self.UNKNOWN])]
+
+cdef class ScopeExtractorCandidateForm(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['FORM'])
+        #form_set = set([tok[ScopeExtractor.COLUMNS['FORM']] for (sent, tree) in sentences for tok in sent])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope).
+
+        """
+        return [self.dict.get(other['node'].value[ScopeExtractor.COLUMNS['FORM']], self.dict[self.UNKNOWN])]
+
+
+cdef class ScopeExtractorCandidateDepRel(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #deprel_set = set([tok[ScopeExtractor.COLUMNS['DEPREL']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['DEPREL'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope).
+
+        """        
+        return [self.dict.get(other['node'].value[ScopeExtractor.COLUMNS['DEPREL']], self.dict[self.UNKNOWN])]
+
+
+cdef class ScopeExtractorLeftCandidatePos(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #pos_set = set([tok[ScopeExtractor.COLUMNS['POSTAG']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['POSTAG'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+        node_id = other['node'].value[ScopeExtractor.COLUMNS['ID']]
+        if node_id == 1:
+            return [self.dict[self.NONE]]
+        else:
+            return [self.dict.get(other['sentence'][node_id-2][ScopeExtractor.COLUMNS['POSTAG']], self.dict[self.UNKNOWN])]
+
+cdef class ScopeExtractorRightCandidatePos(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #pos_set = set([tok[ScopeExtractor.COLUMNS['POSTAG']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['POSTAG'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+        node_id = other['node'].value[ScopeExtractor.COLUMNS['ID']]
+        if node_id == len(other['sentence']):
+            return [self.dict[self.NONE]]
+        else:
+            return [self.dict.get(other['sentence'][node_id][ScopeExtractor.COLUMNS['POSTAG']], self.dict[self.UNKNOWN])]
+
+
+cdef class ScopeExtractorLeftCandidateDepRel(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #deprel_set = set([tok[ScopeExtractor.COLUMNS['DEPREL']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['DEPREL'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+        node_id = other['node'].value[ScopeExtractor.COLUMNS['ID']]
+        if node_id == 1:
+            return [self.dict[self.NONE]]
+        else:
+            return [self.dict.get(other['sentence'][node_id-2][ScopeExtractor.COLUMNS['DEPREL']], self.dict[self.UNKNOWN])]
+
+
+cdef class ScopeExtractorRightCandidateDepRel(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #deprel_set = set([tok[ScopeExtractor.COLUMNS['DEPREL']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['DEPREL'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+        node_id = other['node'].value[ScopeExtractor.COLUMNS['ID']]
+        if node_id == len(other['sentence']):
+            return [self.dict [self.NONE]]
+        else:
+            return [self.dict.get(other['sentence'][node_id][ScopeExtractor.COLUMNS['DEPREL']], self.dict[self.UNKNOWN])]
+
+
+cdef class ScopeExtractorCandidateCueType(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        cue_set = set([tok[ScopeExtractor.COLUMNS['CUE']].split('(')[0] for (sent, tree) in sentences for tok in sent])
+        self.dict = {v:i+1 for i,v in enumerate(cue_set)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope).
+
+        """        
+        return [self.dict.get(other['node'].value[ScopeExtractor.COLUMNS['CUE']].split('(')[0], self.dict[self.UNKNOWN])]
+
+
+cdef class ScopeExtractorCandidateIsCue(ScopeExtractor):
+
+    TRUE = 1
+    FALSE = 2
+
+    cdef dict extract_dict(self, sentences):
+        self.dict = {True: self.TRUE, False: self.FALSE}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope).
+        """        
+        return [self.dict.get(other['node'].value[ScopeExtractor.COLUMNS['CUE']] != 'O', self.dict[self.UNKNOWN])]
+
+
+cdef class ScopeExtractorScopeLength(ScopeExtractor):
+
+    MAX = 100
+
+    cdef dict extract_dict(self, sentences):
+        self.dict = {i:i+1 for i in xrange(self.MAX+1)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope).
+
+        """ 
+        return [self.dict.get(len(other['scope']), self.dict[self.MAX])]
+
+
+cdef class ScopeExtractorCueCandidateDistance(ScopeExtractor):
+
+    MAX = 100
+
+    cdef dict extract_dict(self, sentences):
+        self.dict = {i:i+1 for i in xrange(self.MAX+1)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope).
+
+        """ 
+        return [self.dict.get(abs(other['cue'].value[ScopeExtractor.COLUMNS['ID']]-other['node'].value[ScopeExtractor.COLUMNS['ID']]), self.dict[self.MAX])]
+
+
+cdef class ScopeExtractorCueCandidateDistanceRange(ScopeExtractor):
+
+    RANGE_0_4 = 1
+    RANGE_5_10 = 2
+    RANGE_11 = 3
+
+    cdef dict extract_dict(self, sentences):
+        self.dict = {
+            self.RANGE_0_4: self.RANGE_0_4,
+            self.RANGE_5_10: self.RANGE_5_10,
+            self.RANGE_11: self.RANGE_11
+        }
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope).
+
+        """
+        
+        distance = abs(other['cue'].value[ScopeExtractor.COLUMNS['ID']]-other['node'].value[ScopeExtractor.COLUMNS['ID']])
+        ret = self.dict[self.UNKNOWN]
+        if 0 <= distance <= 4:
+            ret = self.RANGE_0_4
+        elif 5 <= distance <= 10:
+            ret = self.RANGE_5_10
+        elif distance >= 11:
+            ret = self.RANGE_11
+        
+        return [self.dict[ret]]
+
+
+cdef class ScopeExtractorLastDescendantPos(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #pos_set = set([tok[ScopeExtractor.COLUMNS['POSTAG']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['POSTAG'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+
+        last_desc = None
+        l = {}
+
+        # check if lal or ral
+        if other['node'].value[ScopeExtractor.COLUMNS['ID']] < other['cue'].value[ScopeExtractor.COLUMNS['ID']]:
+            # lal - rightmost descendant
+            rc = other['node'].descendants([other['node'].right])
+            for c in rc:
+                if c.value[ScopeExtractor.COLUMNS['ID']] > other['node'].value[ScopeExtractor.COLUMNS['ID']]:
+                    l[c.value[ScopeExtractor.COLUMNS['ID']]] = c
+            last_desc = l[max(l.keys())] if l else None
+        else:
+            # ral - leftmost descendant
+            lc = other['node'].descendants([other['node'].left])
+            for c in lc:
+                if c.value[ScopeExtractor.COLUMNS['ID']] < other['node'].value[ScopeExtractor.COLUMNS['ID']]:
+                    l[c.value[ScopeExtractor.COLUMNS['ID']]] = c
+            last_desc = l[min(l.keys())] if l else None
+
+        return [self.dict.get(last_desc.value[ScopeExtractor.COLUMNS['POSTAG']], self.dict[self.UNKNOWN]) if last_desc else self.dict[self.NONE]]
+
+
+cdef class ScopeExtractorLastDescendantDepRel(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #deprel_set = set([tok[ScopeExtractor.COLUMNS['DEPREL']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['DEPREL'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+        #self.dict[self.NONE] = len(self.dict)
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+
+        last_desc = None
+        l = {}
+
+        # check if lal or ral
+        if other['node'].value[ScopeExtractor.COLUMNS['ID']] < other['cue'].value[ScopeExtractor.COLUMNS['ID']]:
+            # lal - rightmost descendant
+            rc = other['node'].descendants([other['node'].right])
+            for c in rc:
+                if c.value[ScopeExtractor.COLUMNS['ID']] > other['node'].value[ScopeExtractor.COLUMNS['ID']]:
+                    l[c.value[ScopeExtractor.COLUMNS['ID']]] = c
+            last_desc = l[max(l.keys())] if l else None
+        else:
+            # ral - leftmost descendant
+            lc = other['node'].descendants([other['node'].left])
+            for c in lc:
+                if c.value[ScopeExtractor.COLUMNS['ID']] < other['node'].value[ScopeExtractor.COLUMNS['ID']]:
+                    l[c.value[ScopeExtractor.COLUMNS['ID']]] = c
+            last_desc = l[min(l.keys())] if l else None
+
+        return [self.dict.get(last_desc.value[ScopeExtractor.COLUMNS['DEPREL']], self.dict[self.UNKNOWN]) if last_desc else self.dict[self.NONE]]
+
+
+cdef class ScopeExtractorNextListPos(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #pos_set = set([tok[ScopeExtractor.COLUMNS['POSTAG']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['POSTAG'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+        ret = self.dict[self.NONE]
+        if other['next']:
+            ret = self.dict.get(other['next'].value[ScopeExtractor.COLUMNS['POSTAG']], self.dict[self.NONE])
+        return [ret]
+
+
+cdef class ScopeExtractorNextListDepRel(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #deprel_set = set([tok[ScopeExtractor.COLUMNS['DEPREL']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['DEPREL'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+        ret = self.dict[self.NONE]
+        if other['next']:
+            ret = self.dict.get(other['next'].value[ScopeExtractor.COLUMNS['DEPREL']], self.dict[self.NONE])
+        return [ret]
+
+
+cdef class ScopeExtractorCandidateLeftSiblingDepRel(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #deprel_set = set([tok[ScopeExtractor.COLUMNS['DEPREL']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['DEPREL'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+        self.dict[self.NONE] = len(self.dict)
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+        ret = self.dict[self.NONE]
+        s = other['node'].getLeftSibling()
+        if s:
+            ret = self.dict.get(s.value[ScopeExtractor.COLUMNS['DEPREL']], self.dict[self.NONE])
+        return [ret]
+
+cdef class ScopeExtractorCandidateRightSiblingDepRel(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #deprel_set = set([tok[ScopeExtractor.COLUMNS['DEPREL']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['DEPREL'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+        ret = self.dict[self.NONE]
+        s = other['node'].getRightSibling()
+        if s:
+            ret = self.dict.get(s.value[ScopeExtractor.COLUMNS['DEPREL']], self.dict[self.NONE])
+        return [ret]
+
+
+cdef class ScopeExtractorCandidateLeftSiblingPos(ScopeExtractor):
+    
+    cdef dict extract_dict(self, sentences):
+        #pos_set = set([tok[ScopeExtractor.COLUMNS['POSTAG']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['POSTAG'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+        ret = self.dict[self.NONE]
+        s = other['node'].getLeftSibling()
+        if s:
+            ret = self.dict.get(s.value[ScopeExtractor.COLUMNS['POSTAG']], self.dict[self.NONE])
+        return [ret]
+
+cdef class ScopeExtractorCandidateRightSiblingPos(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #deprel_set = set([tok[ScopeExtractor.COLUMNS['POSTAG']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['POSTAG'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+        ret = self.dict[self.NONE]
+        s = other['node'].getRightSibling()
+        if s:
+            ret = self.dict.get(s.value[ScopeExtractor.COLUMNS['POSTAG']], self.dict[self.NONE])
+        return [ret]
+
+
+cdef class ScopeExtractorCandidateLeftSiblingLemma(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #pos_set = set([tok[ScopeExtractor.COLUMNS['LEMMA']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['LEMMA'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+        ret = self.dict[self.NONE]
+        s = other['node'].getLeftSibling()
+        if s:
+            ret = self.dict.get(s.value[ScopeExtractor.COLUMNS['LEMMA']], self.dict[self.NONE])
+        return [ret]
+
+cdef class ScopeExtractorCandidateRightSiblingLemma(ScopeExtractor):
+
+    cdef dict extract_dict(self, sentences):
+        #deprel_set = set([tok[ScopeExtractor.COLUMNS['LEMMA']] for (sent, tree) in sentences for tok in sent])
+        s = self._get_tokens_value(sentences, ScopeExtractor.COLUMNS['LEMMA'])
+        self.dict = {v:i+1 for i,v in enumerate(s)}
+        
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope, sentence, next).
+
+        """
+        ret = self.dict[self.NONE]
+        s = other['node'].getRightSibling()
+        if s:
+            ret = self.dict.get(s.value[ScopeExtractor.COLUMNS['LEMMA']], self.dict[self.NONE])
+        return [ret]

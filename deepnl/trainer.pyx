@@ -16,6 +16,7 @@ import sys
 from network cimport *
 from networkseq cimport *
 from tagger cimport Tagger
+from classifier import Classifier
 
 # for decorations
 cimport cython
@@ -432,3 +433,16 @@ cdef class TaggerTrainer(Trainer):
         for i in xrange(slen):
             window = sentence[i: i+window_size]
             self.converter.update(grads.input[i], window, self.learning_rate)
+
+
+# ----------------------------------------------------------------------
+
+cdef class ScopeTrainer(Trainer):
+    """
+    A trainer for scope classifiers.
+    """
+    def __init__(self, nn, Converter converter, labels, options):
+        super(ScopeTrainer, self).__init__(nn, converter, options)
+        left_context = options.get('left_context', 2)
+        right_context = options.get('right_context', 2)
+        self.classifier = Classifier(converter, labels, left_context, right_context, nn)

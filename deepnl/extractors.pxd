@@ -32,7 +32,7 @@ cdef class Converter(Iterable):
 
     cpdef int_t size(self)
 
-    cpdef np.ndarray[int_t,ndim=2] convert(self, list sent)
+    cpdef np.ndarray[int_t,ndim=2] convert(self, list sent, dict other=*)
 
     cpdef np.ndarray[float_t] lookup(self,
                                      np.ndarray[int_t,ndim=2] sentence,
@@ -56,7 +56,7 @@ cdef class Extractor(object):
     cpdef int_t get_padding_left(self)
     cpdef int_t get_padding_right(self)
 
-    cpdef extract(self, list tokens, int_t field)
+    cpdef extract(self, list tokens, int_t field, dict other)
 
 cdef class Embeddings(Extractor):
     pass
@@ -78,4 +78,37 @@ cdef class GazetteerExtractor(Extractor):
     cdef bool noaccents
 
 cdef class AttributeExtractor(Extractor):
+    pass
+
+cdef class ScopeExtractor(Extractor):
+    cdef dict extract_dict(self, sentences)
+    cdef set _get_tokens_value(self, sentences, position)
+
+cdef class ScopeExtractorCandidateCueDepRel(ScopeExtractor):
+    pass
+
+cdef class ScopeExtractorCandidatePos(ScopeExtractor):
+    pass
+
+cdef class ScopeExtractorCandidateLemma(ScopeExtractor):
+    pass
+
+cdef class ScopeExtractorCandidateForm(ScopeExtractor):
+    pass
+
+cdef class ScopeExtractorCandidateDepRel(ScopeExtractor):
+    pass
+
+cdef class ScopeExtractorLeftCandidatePos(ScopeExtractor):
+    pass
+
+cdef class ScopeExtractorCandidateIsCue(ScopeExtractor):
+    pass
+
+cdef class ScopeExtractorScopeLength(ScopeExtractor):
+    cdef int value
+    pass
+
+cdef class ScopeExtractorCueCandidateDistance(ScopeExtractor):
+    cdef int value
     pass

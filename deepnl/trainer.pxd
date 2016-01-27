@@ -54,3 +54,5 @@ cdef class TaggerTrainer(Trainer):
      cdef readonly object tagger
 
 
+cdef class ScopeTrainer(Trainer):
+    cdef readonly object classifier

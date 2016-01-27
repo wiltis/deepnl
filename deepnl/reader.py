@@ -270,3 +270,264 @@ class ClassifyReader(TweetReader):
             self.sentences.append(tweet[self.text_field].split())
             self.polarities.append(tweet[self.label_field])
         return self.sentences
+
+
+# ----------------------------------------------------------------------
+
+class ScopeReader(Reader):
+    """
+    This class reads data from a CoNLL corpus  and turns it into a representation
+    for use by the neural network for the Scope Detection tagging task.
+    """
+
+    COLUMNS = {
+        'ID': 0,
+        'FORM': 1,
+        'LEMMA': 2,
+        'CPOSTAG': 3,
+        'POSTAG': 4,
+        'FEATS': 5,
+        'HEAD': 6,
+        'DEPREL': 7,
+        'PHEAD': 8,
+        'PDEPREL': 9,
+        'CUE': 10,
+        'SCOPE': 11
+    }
+
+    def __init__(self, formField=0, tagField=-1):
+        super(ScopeReader, self).__init__()
+        self.formField = self.COLUMNS['FORM']
+        self.filename = None;
+
+    def __iter__(self):
+        if self.filename:
+            file = codecs.open(self.filename, 'r', 'utf-8', errors='ignore')
+        else:
+            file = codecs.getreader('utf-8')(sys.stdin)
+        sent = []
+        for line in file:
+            line = line.strip()
+            if line:
+                sent.append(line.split('\t'))
+            else:
+                yield (sent, self.getTree(sent))
+                sent = []
+        if sent:                # just in case
+            yield (sent, self.getTree(sent))
+        if self.filename:
+            file.close()
+
+
+    def read(self, filename=None):
+        """
+        :return: an iterator on sentences.
+        """
+        self.filename = filename
+        return self
+
+
+    def create_vocabulary(self, sentences, size, min_occurrences=3):
+        """
+        Create vocabulary from sentences.
+        :param sentences: an iterable on sentences.
+        :param size: size of the vocabulary
+        :param min_occurrences: Minimum number of times that a token must
+            appear in the text in order to be included in the dictionary. 
+        Sentence tokens are lists [form, ..., tag]
+        """
+        c = Counter()
+        for (sent, tree) in sentences:
+            for token in sent:
+                c[token[ScopeReader.COLUMNS['FORM']]] += 1
+        common = c.most_common(size)
+        words = [w for w, n in common if n >= min_occurrences]
+        return words
+
+
+    @staticmethod
+    def getTree(sentence):
+        ID = ScopeReader.COLUMNS['ID']
+        HEAD = ScopeReader.COLUMNS['HEAD']
+
+        children = {}
+        for token in sentence:
+            token[ID] = int(token[ID])
+            token[HEAD] = int(token[HEAD])
+            if not token[HEAD] in children:
+                children[token[HEAD]] = []
+            children[token[HEAD]].append(token)
+
+        # Bad CoNLL
+        if 0 not in children:
+            print >> sys.stderr, 'BAD CONL: no 0' # DEBUG
+            return None
+        if len(children[0]) > 1:
+            print >> sys.stderr, 'BAD CONLL: children[0] > 1' # DEBUG
+            return None
+
+        root = Node(children[0][0])
+        if len(sentence) == 1:
+            return root
+
+        toEvaluate = [root.value[ID]]
+
+        while toEvaluate:
+            father = toEvaluate.pop(0)
+            nn = root.find(father)
+            for c in children[father]:
+                nn.insertChild(c)
+                if c[ID] in children:
+                    toEvaluate.append(c[ID])
+
+        return root
+    
+
+    @staticmethod
+    def getCues(tree):
+        return [n for n in tree.traverse() if n.value[ScopeReader.COLUMNS['CUE']].startswith('B')]
+
+    @staticmethod
+    def node_in_scope(cue, node):
+        scopes = node.value[ScopeReader.COLUMNS['SCOPE']].split(',')
+        scope_cue_id = cue.value[ScopeReader.COLUMNS['CUE']].split('(')[1][:-1]
+        return scope_cue_id in scopes
+
+    @staticmethod
+    def tokens_in_scope(cue, tokens):
+        labels = []
+        scope_cue_id = cue.value[ScopeReader.COLUMNS['CUE']].split('(')[1][:-1]
+        for token in tokens:
+            scopes = token[ScopeReader.COLUMNS['SCOPE']].split(',')
+            l = 1 if scope_cue_id in scopes else -1
+            labels.append(l)
+        return labels
+
+
+class Node(object):
+    """
+    A node of a parse tree.
+    """
+    def __init__(self, value, parent=None):
+        self.parent = parent
+        self.value = value
+        self.left = []
+        self.right = []
+
+    def insertChild(self, value):
+        w = self.left if value[ScopeReader.COLUMNS['ID']] < self.value[ScopeReader.COLUMNS['ID']] else self.right
+        w.append(Node(value, self))
+
+
+    def isLeftMostChild(self):
+        if self.parent and self.parent.left:
+            return self == self.parent.left[0]
+        return False
+
+    def isRightMostChild(self):
+        if self.parent and self.parent.right:
+            return self == self.parent.right[-1]
+        return False
+
+    def find(self, value):
+        if value == self.value[ScopeReader.COLUMNS['ID']]:
+            return self
+        else:
+            for lr in [self.left, self.right]:
+                for ch in lr:
+                    val = ch.find(value)
+                    if val:
+                        return val
+        return None
+
+    def getSiblings(self):
+        childs = []
+        if self.parent:
+            # the node is right child of the parent
+            if self.parent.value[ScopeReader.COLUMNS['ID']] < self.value[ScopeReader.COLUMNS['ID']]:
+                childs = self.parent.right
+            else:
+                childs = self.parent.left
+        llist = []
+        rlist = []
+        l = llist
+        for ch in childs:
+            if ch == self:
+                l = rlist
+                continue
+            l.append(ch)
+        return llist, rlist
+                
+
+    def getLeftSibling(self):
+        lsiblings, _ = self.getSiblings()
+        return lsiblings[-1] if lsiblings else None
+
+    def getRightSibling(self):
+        _, rsiblings = self.getSiblings()
+        return rsiblings[0] if rsiblings else None
+                
+                
+    # debug
+    def __repr__(self, level=0):
+        p = self.parent.value[ScopeReader.COLUMNS['ID']] if self.parent else 0 
+        ret = '%s%s %s - SCOPE(%s)\n' % ('\t'*level, self.value[ScopeReader.COLUMNS['ID']], self.value[ScopeReader.COLUMNS['FORM']], self.value[ScopeReader.COLUMNS['SCOPE']])
+        
+        for lr in [self.left, self.right]:
+            for child in lr:
+                ret += child.__repr__(level+1)
+        return ret
+        
+    def traverse(self):
+        ret = [self]
+        for lr in [self.left, self.right]:
+            for child in lr:
+                ret.extend(child.traverse())
+        return ret
+
+    def descendants(self, where):
+        ret = []
+        for lr in where:
+            for child in lr:
+                ret.extend(child.descendants([child.left, child.right]))
+
+        ret.insert(0, self)
+        return list(set(ret))
+        
+
+    def ral(self, visited, result):
+        visited.append(self)
+        if self.value[0] > result[-1].value[0]:
+            result.append(self)
+        for rc in self.right:
+            if rc not in visited:
+                rc.ral(visited, result)
+        if self.parent and self.parent not in visited:
+            self.parent.ral(visited, result)
+
+    def lal(self, visited, result):
+        visited.append(self)
+        if self.value[0] < result[-1].value[0]:
+            result.append(self)
+        for lc in sorted(self.left, key=lambda x: x.value[ScopeReader.COLUMNS['ID']], reverse=True):# righmost order
+            if lc not in visited:
+                lc.lal(visited, result)
+        if self.parent and self.parent not in visited:
+            self.parent.lal(visited, result)
+
+
+    # not used
+    def visit(self, visited):
+        visited.append(self.value[ScopeReader.COLUMNS['ID']])
+        yield self
+        for lc in sorted(self.left, key=lambda x: x.value[ScopeReader.COLUMNS['ID']], reverse=True): #rightmost order
+            if lc.value[ScopeReader.COLUMNS['ID']] not in visited:
+                for x in lc.visit(visited):
+                    yield x
+        for rc in self.right:
+            if rc.value[ScopeReader.COLUMNS['ID']] not in visited:
+                for x in rc.visit(visited):
+                    yield x
+        if self.parent and self.parent.value[ScopeReader.COLUMNS['ID']] not in visited:
+            for x in self.parent.visit(visited):
+                yield x

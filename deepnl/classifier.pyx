@@ -91,3 +91,20 @@ cdef class Classifier(object):
         converter.load(file)
 
         return cls(converter, labels, left_context, right_context, nn=nn)
+
+
+cdef class ScopeClassifier(Classifier):
+ 
+    cpdef predict(self, list tokens, dict other=None):
+         """
+         Classify a list of tokens. 
+         
+         :param tokens: a list of tokens, each a list of attributes.
+         :returns: the predicted class label
+         """
+         cdef np.ndarray[int_t,ndim=2] converted = self.converter.convert(tokens, other)
+         sent = np.concatenate((self.pre_padding, converted, self.post_padding))
+         vars = self.nn.variables()
+         self.converter.lookup(sent, vars.input)
+         self.nn.forward(vars) 
+         return self.labels[np.argmax(vars.output)]

@@ -10,6 +10,7 @@ A neural network for NLP tagging tasks.
 # standard
 import logging
 import sys                      # DEBUG
+import cPickle as pickle
 
 import numpy as np
 cimport numpy as np
@@ -126,9 +127,16 @@ cdef class Parameters(object):
         Saves the parameters to a file.
         It saves the weights and biases.
         """
-        np.savez(file, hidden_weights=self.hidden_weights,
-                 output_weights=self.output_weights,
-                 hidden_bias=self.hidden_bias, output_bias=self.output_bias)
+        # np.savez(file, hidden_weights=self.hidden_weights,
+        #          output_weights=self.output_weights,
+        #          hidden_bias=self.hidden_bias, output_bias=self.output_bias)
+        
+        pickle.dump([
+            self.hidden_weights,
+            self.hidden_bias,
+            self.output_weights,
+            self.output_bias], file)
+
 
     @classmethod
     def load(cls, file):
@@ -136,13 +144,17 @@ cdef class Parameters(object):
         Loads the neural network from a file.
         It loads weights, biases and sizes.
         """
-        data = np.load(file)
+        # data = np.load(file)        
+        # p = cls.__new__(cls)
+        # p.hidden_weights = data['hidden_weights']
+        # p.output_weights = data['output_weights']
+        # p.hidden_bias = data['hidden_bias']
+        # p.output_bias = data['output_bias']
         
+        data = pickle.load(file)
         p = cls.__new__(cls)
-        p.hidden_weights = data['hidden_weights']
-        p.output_weights = data['output_weights']
-        p.hidden_bias = data['hidden_bias']
-        p.output_bias = data['output_bias']
+        p.hidden_weights, p.hidden_bias, p.output_weights, p.output_bias = data
+
 
         return p
 
