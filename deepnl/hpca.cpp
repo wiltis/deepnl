@@ -825,12 +825,13 @@ struct __pyx_opt_args_6deepnl_7network_7Network_update;
  *     cdef copy(self, Parameters p)
  *     # cpdef since it is called with super
  *     cpdef update(self, Gradients grads, float_t learning_rate,             # <<<<<<<<<<<<<<
- *                  Parameters ada=*)
+ *                  Parameters ada=*, float_t adaEps=*)
  * 
  */
 struct __pyx_opt_args_6deepnl_7network_10Parameters_update {
   int __pyx_n;
   struct __pyx_obj_6deepnl_7network_Parameters *ada;
+  __pyx_t_6deepnl_7network_float_t adaEps;
 };
 
 /* "network.pxd":46
@@ -860,11 +861,13 @@ struct __pyx_opt_args_6deepnl_7network_7Network_gradients {
 /* "network.pxd":55
  * 
  *     # cpdef since used with super
- *     cpdef update(self, Gradients grads, float_t learning_rate, Parameters ada=*)             # <<<<<<<<<<<<<<
+ *     cpdef update(self, Gradients grads, float_t learning_rate, Parameters ada=*,             # <<<<<<<<<<<<<<
+ *                  float_t adaEps=*)
  */
 struct __pyx_opt_args_6deepnl_7network_7Network_update {
   int __pyx_n;
   struct __pyx_obj_6deepnl_7network_Parameters *ada;
+  __pyx_t_6deepnl_7network_float_t adaEps;
 };
 struct __pyx_opt_args_6deepnl_4hpca_fit;
 
@@ -913,7 +916,7 @@ struct __pyx_obj_6deepnl_7network_Parameters {
 
 
 /* "network.pxd":31
- *                  Parameters ada=*)
+ *                  Parameters ada=*, float_t adaEps=*)
  * 
  * cdef class Gradients(Parameters):             # <<<<<<<<<<<<<<
  * 
@@ -960,7 +963,7 @@ static struct __pyx_vtabstruct_6deepnl_7network_Parameters *__pyx_vtabptr_6deepn
 
 
 /* "network.pxd":31
- *                  Parameters ada=*)
+ *                  Parameters ada=*, float_t adaEps=*)
  * 
  * cdef class Gradients(Parameters):             # <<<<<<<<<<<<<<
  * 
@@ -1414,7 +1417,7 @@ static char __pyx_k_full_matrices[] = "full_matrices";
 static char __pyx_k_scipy_linalg_lapack[] = "scipy.linalg.lapack";
 static char __pyx_k_ndarray_is_not_C_contiguous[] = "ndarray is not C contiguous";
 static char __pyx_k_Learn_word_embeddings_from_plai[] = "\nLearn word embeddings from plain text using Hellinger PCA.\n\nSee\nLebret, R\303\251mi, and Ronan Collobert. \"Word Embeddings through Hellinger PCA.\" EACL 2014 (2014): 482.\n\nAuthor: Giuseppe Attardi\n";
-static char __pyx_k_net_marea_export_project_piqass[] = "/net/marea/export/project/piqasso/Experiments/NegationAndSpeculation/scope/deepnl_experiments/deepnl-scope/deepnl/hpca.pyx";
+static char __pyx_k_net_marea_export_project_piqass[] = "/net/marea/export/project/piqasso/Experiments/NegationAndSpeculation/scope/deepnl_experiments/deepnl/deepnl/hpca.pyx";
 static char __pyx_k_unknown_dtype_code_in_numpy_pxd[] = "unknown dtype code in numpy.pxd (%d)";
 static char __pyx_k_Format_string_allocated_too_shor[] = "Format string allocated too short, see comment in numpy.pxd";
 static char __pyx_k_Non_native_byte_order_not_suppor[] = "Non-native byte order not supported";
