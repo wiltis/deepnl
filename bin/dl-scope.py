@@ -135,7 +135,8 @@ mapConfigurationExtractors = {
     3: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc']),
     4: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc', 'siblings']),
     5: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc', 'siblings', 'next_list']),
-    6: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc', 'siblings', 'next_list', 'scope'])
+    6: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc', 'siblings', 'next_list', 'scope']),
+    7: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc', 'siblings', 'scope'])
 }
 
 # ----------------------------------------------------------------------
