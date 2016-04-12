@@ -1392,3 +1392,5 @@ cdef class ScopeExtractorCandidateRightSiblingLemma(ScopeExtractor):
         if s:
             ret = self.dict.get(s.value[ScopeExtractor.COLUMNS['LEMMA']], self.dict[self.NONE])
         return [ret]
+
+# ----------------------------------------------------------------------

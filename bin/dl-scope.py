@@ -122,7 +122,11 @@ extractors_dict = {
         ScopeExtractorCandidateLeftSiblingLemma,
         ScopeExtractorCandidateRightSiblingLemma
 
+    ],
+    'test': [
+        ScopeExtractorCandidateSubtreeNodes
     ]
+
 }
 
 def conf_extractors(keys):
@@ -136,7 +140,9 @@ mapConfigurationExtractors = {
     4: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc', 'siblings']),
     5: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc', 'siblings', 'next_list']),
     6: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc', 'siblings', 'next_list', 'scope']),
-    7: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc', 'siblings', 'scope'])
+    7: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc', 'siblings', 'scope']),
+    8: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc', 'siblings', 'scope', 'test']),
+    9: conf_extractors(['candidateCue', 'candidate', 'left_right', 'last_desc', 'siblings', 'next_list', 'scope', 'test'])
 }
 
 # ----------------------------------------------------------------------
