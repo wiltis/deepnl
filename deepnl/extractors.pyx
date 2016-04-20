@@ -1393,4 +1393,28 @@ cdef class ScopeExtractorCandidateRightSiblingLemma(ScopeExtractor):
             ret = self.dict.get(s.value[ScopeExtractor.COLUMNS['LEMMA']], self.dict[self.NONE])
         return [ret]
 
+
+cdef class ScopeExtractorCandidateSubtreeNodes(ScopeExtractor):
+
+    MAX = 100
+
+    cdef dict extract_dict(self, sentences):
+        self.dict = {i:i+1 for i in xrange(self.MAX+1)}
+
+    cpdef extract(self, list tokens, int_t field, dict other):
+        """
+        Extract the features representing each token.
+        :param tokens: list of tokens.
+        :param field: which token field to use, the whole token if None.
+        :param other: a dictionary with other params (tree, cue, node, scope).
+
+        """ 
+        candidate = other['node']
+        nodes = candidate.descendants([candidate.left, candidate.right])
+
+
+        return [self.dict.get(len(nodes), self.dict[self.MAX])]
+
+
+
 # ----------------------------------------------------------------------

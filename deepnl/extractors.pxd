@@ -112,3 +112,6 @@ cdef class ScopeExtractorScopeLength(ScopeExtractor):
 cdef class ScopeExtractorCueCandidateDistance(ScopeExtractor):
     cdef int value
     pass
+
+cdef class ScopeExtractorCandidateSubtreeNodes(ScopeExtractor):
+    pass
